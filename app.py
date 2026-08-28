@@ -135,7 +135,7 @@ def parse_progress_line(job, line):
         job.update({"status": "converting", "current": title})
 
 
-def run_download(job_id, url):
+def run_download(job_id, url, fmt, quality, audio_quality):
     job = JOBS[job_id]
     job["status"] = "extracting"
     job_dir = DOWNLOADS_DIR / job_id
@@ -148,8 +148,19 @@ def run_download(job_id, url):
         "--retries", "3",
         "--windows-filenames",
         "--ffmpeg-location", str(BIN_DIR),
-        "-f", "bestaudio/best",
-        "-x", "--audio-format", "mp3", "--audio-quality", "192",
+    ]
+    if fmt == "mp4":
+        if not quality or quality == "best":
+            fsel = "bestvideo+bestaudio/best"
+        else:
+            fsel = "bestvideo[height<={}]+bestaudio/best[height<={}]/best".format(quality, quality)
+        cmd += ["-f", fsel, "--merge-output-format", "mp4"]
+    else:
+        cmd += [
+            "-f", "bestaudio/best",
+            "-x", "--audio-format", "mp3", "--audio-quality", audio_quality,
+        ]
+    cmd += [
         "--progress-template", DOWNLOAD_TEMPLATE,
         "--extractor-args",
         "youtube:player_client=tv,web_embedded,web_safari,android,ios,web",
@@ -173,13 +184,14 @@ def run_download(job_id, url):
             parse_progress_line(job, line.rstrip("\r\n"))
         proc.wait()
 
-        mp3_files = sorted(job_dir.glob("*.mp3"))
-        if mp3_files:
+        ext = "mp4" if fmt == "mp4" else "mp3"
+        files = sorted(job_dir.glob("*.{}".format(ext)))
+        if files:
             job.update({
                 "status": "done",
                 "percent": 100,
-                "total": len(mp3_files),
-                "files": [f.name for f in mp3_files],
+                "total": len(files),
+                "files": [f.name for f in files],
             })
         else:
             job.update({"status": "error", "error": "No se descargó ningún archivo"})
@@ -201,6 +213,14 @@ def api_download():
     if not re.match(r"https?://", url):
         return jsonify({"error": "URL inválida"}), 400
 
+    fmt = (data.get("format") or "mp3").strip().lower()
+    if fmt not in ("mp3", "mp4"):
+        fmt = "mp3"
+    quality = (data.get("quality") or "").strip() or "best"
+    audio_quality = (data.get("audio_quality") or "").strip() or "192"
+    if audio_quality not in ("128", "192", "256", "320"):
+        audio_quality = "192"
+
     job_id = uuid.uuid4().hex
     with JOBS_LOCK:
         JOBS[job_id] = {
@@ -208,12 +228,15 @@ def api_download():
             "status": "queued",
             "percent": 0,
             "url": url,
+            "format": fmt,
+            "quality": quality,
+            "audio_quality": audio_quality,
             "files": [],
             "total": 0,
             "current": "",
             "error": None,
         }
-    threading.Thread(target=run_download, args=(job_id, url), daemon=True).start()
+    threading.Thread(target=run_download, args=(job_id, url, fmt, quality, audio_quality), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 
@@ -231,7 +254,8 @@ def api_zip(job_id):
     if not job_dir.exists():
         return jsonify({"error": "No encontrado"}), 404
     mp3_files = sorted(job_dir.glob("*.mp3"))
-    if not mp3_files:
+    mp4_files = sorted(job_dir.glob("*.mp4"))
+    if not mp3_files and not mp4_files:
         return jsonify({"error": "Sin archivos"}), 404
 
     zip_path = DOWNLOADS_DIR / f"{job_id}.zip"
