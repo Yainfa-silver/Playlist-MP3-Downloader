@@ -158,8 +158,10 @@ def run_download(job_id, url, fmt, quality, audio_quality):
     else:
         cmd += [
             "-f", "bestaudio/best",
-            "-x", "--audio-format", "mp3", "--audio-quality", audio_quality,
+            "-x", "--audio-format", fmt,
         ]
+        if fmt != "flac":
+            cmd += ["--audio-quality", audio_quality]
     cmd += [
         "--progress-template", DOWNLOAD_TEMPLATE,
         "--extractor-args",
@@ -184,7 +186,7 @@ def run_download(job_id, url, fmt, quality, audio_quality):
             parse_progress_line(job, line.rstrip("\r\n"))
         proc.wait()
 
-        ext = "mp4" if fmt == "mp4" else "mp3"
+        ext = fmt
         files = sorted(job_dir.glob("*.{}".format(ext)))
         if files:
             job.update({
@@ -214,7 +216,7 @@ def api_download():
         return jsonify({"error": "URL inválida"}), 400
 
     fmt = (data.get("format") or "mp3").strip().lower()
-    if fmt not in ("mp3", "mp4"):
+    if fmt not in ("mp3", "mp4", "opus", "flac"):
         fmt = "mp3"
     quality = (data.get("quality") or "").strip() or "best"
     audio_quality = (data.get("audio_quality") or "").strip() or "192"
@@ -255,7 +257,9 @@ def api_zip(job_id):
         return jsonify({"error": "No encontrado"}), 404
     mp3_files = sorted(job_dir.glob("*.mp3"))
     mp4_files = sorted(job_dir.glob("*.mp4"))
-    if not mp3_files and not mp4_files:
+    opus_files = sorted(job_dir.glob("*.opus"))
+    flac_files = sorted(job_dir.glob("*.flac"))
+    if not mp3_files and not mp4_files and not opus_files and not flac_files:
         return jsonify({"error": "Sin archivos"}), 404
 
     zip_path = DOWNLOADS_DIR / f"{job_id}.zip"

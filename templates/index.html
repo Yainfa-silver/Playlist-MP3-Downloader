@@ -135,6 +135,8 @@
             <label>Formato
                 <select id="format">
                     <option value="mp3">MP3 (solo audio)</option>
+                    <option value="opus">OPUS (solo audio)</option>
+                    <option value="flac">FLAC (solo audio)</option>
                     <option value="mp4">MP4 (video)</option>
                 </select>
             </label>
@@ -189,8 +191,9 @@
 
         formatSel.addEventListener("change", () => {
             const isMp4 = formatSel.value === "mp4";
+            const isFlac = formatSel.value === "flac";
             qualityWrap.style.display = isMp4 ? "" : "none";
-            audioQualityWrap.style.display = isMp4 ? "none" : "";
+            audioQualityWrap.style.display = (isMp4 || isFlac) ? "none" : "";
         });
 
         form.addEventListener("submit", async (e) => {
@@ -246,7 +249,7 @@
                         const speed = job.speed ? formatSpeed(job.speed) : "";
                         setStatus(`<span class="spinner"></span>Descargando: <strong>${escapeHtml(job.current)}</strong>`, `${job.percent}% ${speed}`);
                     } else if (job.status === "converting") {
-                        const ext = job.format === "mp4" ? "MP4" : "MP3";
+                        const ext = (job.format || "mp3").toUpperCase();
                         setStatus(`<span class="spinner"></span>Convirtiendo a ${ext}: <strong>${escapeHtml(job.current)}</strong>`, "");
                     } else if (job.status === "done") {
                         clearInterval(pollTimer);
