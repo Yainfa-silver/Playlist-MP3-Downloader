@@ -57,6 +57,17 @@ COOKIES_FILE = DATA_DIR / "cookies.txt"
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 
+
+@app.after_request
+def _no_cache(resp):
+    """Fuerza a que el navegador no guarde la interfaz en caché, para que
+    siempre se muestre la versión más reciente al abrir la app."""
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 
