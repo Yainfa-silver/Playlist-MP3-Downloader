@@ -13,6 +13,10 @@ Desarrollada en Python, se ejecuta localmente y ofrece una interfaz web ligera y
 - 📃 **Soporte de playlists completas** de YouTube.
 - 📦 **Descarga individual** de cada archivo o todo en un **ZIP**.
 - ⏱️ **Barra de progreso en tiempo real** (velocidad, porcentaje y ETA).
+- 📊 **Resumen final con fallos**: muestra cuántas canciones se descargaron, cuántas faltaron y el motivo de cada fallo.
+- 🔁 **Reintentos automáticos**: si quedan canciones sin bajar, la app espera y vuelve a intentarlo hasta 3 veces.
+- 📂 **Descarga reanudable**: cada playlist se guarda en su propia carpeta; si pulsas *Descargar* de nuevo, solo baja las canciones que faltan.
+- 🍪 **Subida de `cookies.txt` desde la interfaz** para evitar bloqueos de YouTube en playlists grandes.
 - 🖥️ **Interfaz web local** con diseño oscuro moderno.
 - 📥 **Instalación automática** de dependencias (`yt-dlp` y `ffmpeg`) en el primer arranque.
 - 🔁 **Actualización de `yt-dlp`** desde la bandeja del sistema.
@@ -98,21 +102,31 @@ El ejecutable se genera en `dist\PlaylistMP3Downloader.exe`.
 
 ### Cookies del navegador (evita el error 403)
 
-Si YouTube bloquea las descargas con un error `403`, activa el uso de las cookies de tu navegador (debes haber iniciado sesión en YouTube en ese navegador):
+Si YouTube bloquea las descargas con un error `403` o faltan canciones en medio de una playlist larga, activa el uso de cookies (debes haber iniciado sesión en YouTube para poder exportarlas):
 
-- **Versión compilada**: define la variable de entorno `COOKIES_BROWSER` antes de abrir el `.exe`.
+- **Desde la interfaz web (recomendado)**: exporta tus cookies en formato Netscape con una extensión como *Get cookies.txt LOCALLY* (para Chrome/Firefox/Edge) y sube el archivo `cookies.txt` desde el botón **"Subir cookies.txt"** de la app. Las cookies se guardan en `%LOCALAPPDATA%\PlaylistMP3Downloader\cookies.txt` (Windows) o `~/.playlistmp3downloader/cookies.txt` (Linux/macOS).
 
-  ```powershell
-  $env:COOKIES_BROWSER = "chrome"   # o "edge", "firefox", "brave", etc.
-  .\PlaylistMP3Downloader.exe
-  ```
+- **Con variable de entorno `COOKIES_BROWSER`** (usa las cookies de tu navegador directamente):
 
-- **Desde código fuente**:
+  - **Versión compilada**:
 
-  ```powershell
-  $env:COOKIES_BROWSER = "chrome"
-  python main.py
-  ```
+    ```powershell
+    $env:COOKIES_BROWSER = "chrome"   # o "edge", "firefox", "brave", etc.
+    .\PlaylistMP3Downloader.exe
+    ```
+
+  - **Desde código fuente**:
+
+    ```powershell
+    $env:COOKIES_BROWSER = "chrome"
+    python main.py
+    ```
+
+> ⚠️ Las cookies caducan: si vuelven a faltar canciones, vuelve a exportarlas y súbelas de nuevo.
+
+### ¿Por qué faltan canciones en playlists grandes?
+
+YouTube limita las descargas sin sesión. Después de un número de canciones (a veces ~100-200), empieza a devolver errores (`403`, *"Sign in to confirm you're not a bot"*, etc.). La app **salta esas canciones y sigue con el resto** (para no abortar toda la playlist), y ahora te muestra exactamente **qué canciones fallaron y por qué** en el resumen final. Con cookies subidas e iniciando sesión, la práctica totalidad de esos fallos desaparece.
 
 ---
 

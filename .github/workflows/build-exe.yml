@@ -1,0 +1,37 @@
+name: Compilar EXE
+
+on:
+  workflow_dispatch:        # Botón "Run workflow" en GitHub
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flask pystray pillow pyinstaller
+
+      - name: Compilar el .exe
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole `
+            --name "PlaylistMP3Downloader" `
+            --add-data "templates;templates" `
+            --hidden-import "pystray._win32" `
+            main.py
+
+      - name: Subir el .exe generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlaylistMP3Downloader
+          path: dist/PlaylistMP3Downloader.exe

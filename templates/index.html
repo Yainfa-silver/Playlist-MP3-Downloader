@@ -108,6 +108,34 @@
             background: #333;
         }
         .error { color: #ff6b6b; font-size: .9rem; margin-top: 12px; }
+        .cookie-btn {
+            padding: 8px 14px;
+            background: #333;
+            color: var(--text);
+            border: 1px solid #444;
+            border-radius: 8px;
+            font-size: .85rem;
+            cursor: pointer;
+        }
+        .cookie-btn:hover { background: #444; }
+        .cookie-label { color: var(--muted); font-size: .9rem; cursor: pointer; }
+        .cookie-status { color: #7bd88f; font-size: .85rem; }
+        .cookie-hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+        .failed-box {
+            margin-top: 16px;
+            padding: 12px 14px;
+            background: #241414;
+            border: 1px solid #461f1f;
+            border-radius: 8px;
+            font-size: .85rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .failed-box .fb-title { color: #ff8a8a; font-weight: 600; margin-bottom: 6px; }
+        .failed-item { margin-bottom: 8px; }
+        .failed-item .fi-name { color: var(--text); }
+        .failed-item .fi-err { color: var(--muted); font-size: .78rem; word-break: break-word; }
+        .warning { color: #ffb86b; }
         .spinner {
             display: inline-block;
             width: 14px; height: 14px;
@@ -167,6 +195,16 @@
             <div class="status-text" id="statusDetail"></div>
         </div>
 
+        <div class="cookies" id="cookiesBox" style="margin-top: 18px;">
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <label for="cookieFile" class="cookie-label">🍪 Cookies de YouTube (para playlists grandes)</label>
+                <input type="file" id="cookieFile" accept=".txt" style="display:none">
+                <button type="button" id="cookieBtn" class="cookie-btn">Subir cookies.txt</button>
+                <span class="cookie-status" id="cookieStatus"></span>
+            </div>
+            <p class="cookie-hint" id="cookieHint"></p>
+        </div>
+
         <div class="error" id="error"></div>
         <div class="results" id="results"></div>
     </div>
@@ -186,8 +224,46 @@
         const bar = document.getElementById("bar");
         const errorEl = document.getElementById("error");
         const results = document.getElementById("results");
+        const cookieFile = document.getElementById("cookieFile");
+        const cookieBtn = document.getElementById("cookieBtn");
+        const cookieStatus = document.getElementById("cookieStatus");
+        const cookieHint = document.getElementById("cookieHint");
 
         let pollTimer = null;
+
+        async function refreshCookiesStatus() {
+            try {
+                const res = await fetch("/api/cookies");
+                const data = await res.json();
+                cookieStatus.textContent = data.enabled ? "✔ cookies activas" : "";
+                cookieHint.textContent = data.enabled
+                    ? "Usá cookies.txt descargadas desde tu navegador (extensión 'Get cookies.txt LOCALLY' o similar)."
+                    : "Para playlists grandes, YouTube suele bloquear sin iniciar sesión. Subí tu cookies.txt para evitar que falten canciones.";
+            } catch (e) { /* el servidor aún no está listo */ }
+        }
+        refreshCookiesStatus();
+
+        cookieBtn.addEventListener("click", () => cookieFile.click());
+        cookieFile.addEventListener("change", async () => {
+            const file = cookieFile.files && cookieFile.files[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append("file", file);
+            cookieBtn.disabled = true;
+            try {
+                const res = await fetch("/api/cookies", { method: "POST", body: fd });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Error subiendo cookies");
+                cookieStatus.textContent = "✔ cookies activas (" + data.filename + ")";
+                cookieHint.textContent = "Las cookies son válidas hasta que caduque tu sesión. Volvé a subirlas si vuelven a faltar canciones.";
+            } catch (err) {
+                cookieStatus.style.color = "#ff6b6b";
+                cookieStatus.textContent = "✖ " + err.message;
+            } finally {
+                cookieBtn.disabled = false;
+                cookieFile.value = "";
+            }
+        });
 
         formatSel.addEventListener("change", () => {
             const isMp4 = formatSel.value === "mp4";
@@ -245,6 +321,9 @@
 
                     if (job.status === "extracting" || job.status === "queued") {
                         setStatus('<span class="spinner"></span>Extrayendo información de la playlist...', "");
+                    } else if (job.status === "retrying") {
+                        const attempt = job.attempt || "";
+                        setStatus(`<span class="spinner"></span>Reintentando canciones que faltan (intento ${attempt}/${job.attempts_used || 3})...`, job.current || "");
                     } else if (job.status === "downloading") {
                         const speed = job.speed ? formatSpeed(job.speed) : "";
                         setStatus(`<span class="spinner"></span>Descargando: <strong>${escapeHtml(job.current)}</strong>`, `${job.percent}% ${speed}`);
@@ -254,7 +333,13 @@
                     } else if (job.status === "done") {
                         clearInterval(pollTimer);
                         btn.disabled = false;
-                        setStatus(`Completado: <strong>${job.total}</strong> archivos descargados`, "");
+                        const downloaded = job.downloaded || 0;
+                        const missing = job.total > downloaded ? job.total - downloaded : 0;
+                        let summary = `Descargadas: <strong>${downloaded}</strong>`;
+                        if (job.total > 0) summary += ` de <strong>${job.total}</strong>`;
+                        if (job.attempts_used > 1) summary += ` (${job.attempts_used} intentos)`;
+                        if (missing > 0) summary += ` · Faltan: <strong class="warning">${missing}</strong>`;
+                        setStatus(`Completado — ${summary}`, "");
                         renderResults(job);
                     } else if (job.status === "error") {
                         clearInterval(pollTimer);
@@ -295,6 +380,34 @@
                 zip.href = `/api/zip/${job.id}`;
                 zip.textContent = "Descargar todo como ZIP";
                 results.appendChild(zip);
+            }
+
+            if ((job.failed_count || 0) > 0) {
+                const box = document.createElement("div");
+                box.className = "failed-box";
+                box.innerHTML = `<div class="fb-title">⚠ No se pudieron descargar ${job.failed_count} canciones</div>`;
+                (job.failed || []).forEach((f) => {
+                    const item = document.createElement("div");
+                    item.className = "failed-item";
+                    const name = document.createElement("div");
+                    name.className = "fi-name";
+                    name.textContent = f.title || "Desconocida";
+                    const err = document.createElement("div");
+                    err.className = "fi-err";
+                    err.textContent = f.error || "";
+                    item.appendChild(name);
+                    item.appendChild(err);
+                    box.appendChild(item);
+                });
+                results.appendChild(box);
+
+                const cookieHintBox = document.createElement("p");
+                cookieHintBox.className = "warning";
+                cookieHintBox.style.marginTop = "10px";
+                cookieHintBox.style.fontSize = ".85rem";
+                cookieHintBox.textContent =
+                    "💡 Podés volver a pulsar Descargar: la app retoma por la mitad y solo baja lo que falta. Si siguen faltando muchas, probablemente es un bloqueo de YouTube sin sesión: subí tu cookies.txt arriba y reintentá.";
+                results.appendChild(cookieHintBox);
             }
         }
 
