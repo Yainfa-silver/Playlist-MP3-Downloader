@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playlist MP3 Downloader</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --card: #181818;
+            --accent: #ff0000;
+            --text: #f1f1f1;
+            --muted: #aaa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .container {
+            width: 100%;
+            max-width: 640px;
+            background: var(--card);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        h1 { font-size: 1.6rem; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+        h1 .dot { width: 12px; height: 12px; background: var(--accent); border-radius: 50%; }
+        .subtitle { color: var(--muted); margin-bottom: 28px; font-size: 0.95rem; }
+        form { display: flex; gap: 10px; margin-bottom: 24px; }
+        input {
+            flex: 1;
+            padding: 14px 16px;
+            border: 1px solid #333;
+            background: #0a0a0a;
+            color: var(--text);
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+        }
+        input:focus { border-color: var(--accent); }
+        button {
+            padding: 14px 22px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .2s;
+        }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        .status { display: none; margin-top: 8px; }
+        .status.visible { display: block; }
+        .progress-track {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 12px 0 8px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width .3s;
+        }
+        .status-text { color: var(--muted); font-size: .9rem; }
+        .status-text strong { color: var(--text); }
+        .results { margin-top: 20px; }
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #0a0a0a;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: .9rem;
+        }
+        .file-item a { color: var(--accent); text-decoration: none; }
+        .file-item a:hover { text-decoration: underline; }
+        .zip-btn {
+            width: 100%;
+            margin-top: 16px;
+            background: #333;
+        }
+        .error { color: #ff6b6b; font-size: .9rem; margin-top: 12px; }
+        .spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span class="dot"></span>Playlist MP3 Downloader</h1>
+        <p class="subtitle">Pega la URL de una playlist de YouTube y descarga el audio en MP3.</p>
+
+        <form id="form">
+            <input type="text" id="url" placeholder="https://www.youtube.com/playlist?list=..." required>
+            <button type="submit" id="btn">Descargar</button>
+        </form>
+
+        <div class="status" id="status">
+            <div class="status-text" id="statusText"></div>
+            <div class="progress-track"><div class="progress-bar" id="bar"></div></div>
+            <div class="status-text" id="statusDetail"></div>
+        </div>
+
+        <div class="error" id="error"></div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById("form");
+        const input = document.getElementById("url");
+        const btn = document.getElementById("btn");
+        const statusEl = document.getElementById("status");
+        const statusText = document.getElementById("statusText");
+        const statusDetail = document.getElementById("statusDetail");
+        const bar = document.getElementById("bar");
+        const errorEl = document.getElementById("error");
+        const results = document.getElementById("results");
+
+        let pollTimer = null;
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const url = input.value.trim();
+            if (!url) return;
+
+            errorEl.textContent = "";
+            results.innerHTML = "";
+            btn.disabled = true;
+            statusEl.classList.add("visible");
+            setStatus("Enviando...", "");
+
+            try {
+                const res = await fetch("/api/download", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Error");
+                poll(data.job_id);
+            } catch (err) {
+                btn.disabled = false;
+                statusEl.classList.remove("visible");
+                errorEl.textContent = err.message;
+            }
+        });
+
+        function setStatus(main, detail) {
+            statusText.innerHTML = main;
+            statusDetail.textContent = detail || "";
+        }
+
+        function poll(jobId) {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/status/${jobId}`);
+                    const job = await res.json();
+                    if (!res.ok) throw new Error(job.error || "Error");
+
+                    bar.style.width = (job.percent || 0) + "%";
+
+                    if (job.status === "extracting" || job.status === "queued") {
+                        setStatus('<span class="spinner"></span>Extrayendo información de la playlist...', "");
+                    } else if (job.status === "downloading") {
+                        const speed = job.speed ? formatSpeed(job.speed) : "";
+                        setStatus(`<span class="spinner"></span>Descargando: <strong>${escapeHtml(job.current)}</strong>`, `${job.percent}% ${speed}`);
+                    } else if (job.status === "converting") {
+                        setStatus(`<span class="spinner"></span>Convirtiendo a MP3: <strong>${escapeHtml(job.current)}</strong>`, "");
+                    } else if (job.status === "done") {
+                        clearInterval(pollTimer);
+                        btn.disabled = false;
+                        setStatus(`Completado: <strong>${job.total}</strong> canciones descargadas`, "");
+                        renderResults(job);
+                    } else if (job.status === "error") {
+                        clearInterval(pollTimer);
+                        btn.disabled = false;
+                        statusEl.classList.remove("visible");
+                        errorEl.textContent = job.error;
+                    }
+                } catch (err) {
+                    clearInterval(pollTimer);
+                    btn.disabled = false;
+                    statusEl.classList.remove("visible");
+                    errorEl.textContent = err.message;
+                }
+            }, 1000);
+        }
+
+        function renderResults(job) {
+            results.innerHTML = "";
+            job.files.forEach((f) => {
+                const div = document.createElement("div");
+                div.className = "file-item";
+                const span = document.createElement("span");
+                span.textContent = f;
+                const a = document.createElement("a");
+                a.href = `/api/file/${job.id}/${encodeURIComponent(f)}`;
+                a.textContent = "Descargar";
+                div.appendChild(span);
+                div.appendChild(a);
+                results.appendChild(div);
+            });
+
+            if (job.files.length > 1) {
+                const zip = document.createElement("a");
+                zip.className = "zip-btn";
+                zip.style.display = "block";
+                zip.style.textAlign = "center";
+                zip.style.textDecoration = "none";
+                zip.href = `/api/zip/${job.id}`;
+                zip.textContent = "Descargar todo como ZIP";
+                results.appendChild(zip);
+            }
+        }
+
+        function formatSpeed(bytes) {
+            if (!bytes) return "";
+            return (bytes / 1024 / 1024).toFixed(1) + " MB/s";
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement("div");
+            div.textContent = s;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

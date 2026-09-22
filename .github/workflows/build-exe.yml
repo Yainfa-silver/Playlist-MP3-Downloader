@@ -34,34 +34,7 @@ jobs:
             main.py
 
       - name: VERIFICAR que el .exe contiene Formato y Calidad
-        run: |
-          python - <<'PY'
-          import glob, zipfile, os, subprocess, sys
-          # Listamos el contenido del .exe (CArchive) y extraemos la plantilla
-          from pathlib import Path
-          exe = Path("dist/PlaylistMP3Downloader.exe")
-          out = Path("_check")
-          out.mkdir(exist_ok=True)
-          cmd = [sys.executable, "-m", "PyInstaller.utils.cliutils.archive_viewer", "-l", str(exe)]
-          listing = subprocess.run(cmd, capture_output=True, text=True).stdout
-          print(listing[-2000:])
-          assert "templates\\index.html" in listing, "La plantilla index.html NO esta dentro del .exe"
-          # Extraemos la plantilla
-          with open("_cmds.txt", "w") as f:
-              f.write("x\ntemplates\\index.html\n_check\\index_extracted.html\nq\n")
-          with open("_cmds.txt") as f:
-              r = subprocess.run([sys.executable, "-m", "PyInstaller.utils.cliutils.archive_viewer", str(exe)],
-                                 stdin=f, capture_output=True, text=True)
-          html = Path("_check/index_extracted.html").read_text(encoding="utf-8", errors="replace")
-          checks = {
-              "Formato": "Calidad de audio" in html,
-              "MP4": "MP4 (video)" in html,
-              "version": "v2.0" in html,
-          }
-          print("VERIFICACION:", checks)
-          assert all(checks.values()), "FALLO: el .exe no incluye las opciones esperadas"
-          print("OK: el .exe contiene Formato, Calidad de audio y version v2.0")
-          PY
+        run: python .github/verify_exe.py
 
       - name: Subir el .exe generado
         uses: actions/upload-artifact@v4
